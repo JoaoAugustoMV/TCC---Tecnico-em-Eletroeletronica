@@ -1,0 +1,385 @@
+// -----------------------Bibliotecas----------------------- 
+#include <EEPROM.h> // Biblioteca para usar a memória EEPROM 
+#include <LiquidCrystal.h> // Biblioteca para controlar o display LCD
+#include <RTClib.h> // Biblioteca para controlar o módulo relógio DS1307
+#include <Keypad.h> // Biblioteca para controlar o teclado matricial
+#include <Stepper.h> // Biblioteca para controlar o motor de passo
+
+// -----------------------Dispaly LCD-----------------------
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2); // Mapeamento do pinos para o LCD
+// ---------------------------------------------------------
+
+// ------------MOTOR DE PASSO------------
+#define stepsPerRevolution  200  // Passos para completar uma volta
+#define Angulo 60 // Angulo das divisões
+#define Ang_por_passo 1.8 // Quantos angulos por passos
+
+Stepper myStepper(stepsPerRevolution, 23,25,27,29); // Mapeamento do pinos para o motor de passo 23,25,27,29 || 29,27,25,23
+                                                    //                                   Sentido:    Horário || Anti-horário
+// Var para controle do motor
+
+int Num_porcao = 0; // Numeros de porções a serem liberadas
+int Uni_Num_porcao = 0; // Caso o número de porções seja >10
+int Ctrl_Giro = 0; // Usada o motor girar apenas uma vez
+
+float N_Passos; // Número de passos que o motor dará
+// ---------------------------------------------------------
+
+// -----------------------TECLADO MATRICIAL-----------------------
+//Array que mapeia o teclado 
+char teclas[4][3] = {{'1', '2', '3'},
+                     {'4', '5', '6'},
+                     {'7', '8', '9'},
+                     {'*', '0', '#'}};
+// Array para controle do teclado
+byte pLinhas [] = {53, 51, 49, 47}; // Array para os pinos das linhas
+byte pColunas [] = {43, 41, 39};   // Array para os pinos das colunas
+//Comando da biblioteca Keypad que mapeia o teclado
+Keypad teclado = Keypad (makeKeymap(teclas),pLinhas,pColunas,4,3); // teclado 
+
+int teclaPress; // Armazena a tecla pressionada
+
+// -----------------------DS 1307-----------------------
+RTC_DS1307 rtc; // Declara objeto "rtc" da classe RTC_DS1307
+
+// Var para controle da hora
+
+int Dez_Hora[9]; // Armazena a unidade do minuto do horário selecionado
+int Uni_Hora[9]; // Armazena a unidade da hora do horário selecionado
+int Dez_Min[9]; // Armazena a dezena do minuto do horário selecionado
+int Uni_Min[9];  // Armazena a unidade do minuto do horário selecionado
+int HORA_S[9]; // Junta a dezena e a unidade da hora do horário selecionado
+int MIN_S[9]; // Junta a dezena e a unidade da hora do horário selecionado
+String St_Dez_Hora[9]; // Para exibição
+String St_Uni_Hora[9]; 
+String St_Dez_Min[9];  
+String St_Uni_Min[9];  // Para exibição
+String St_HORA_S[9];   
+String St_MIN_S[9];    // Para exibição
+int Hr_Atual; // Armazena a hora atual (só hora, sem minutos)
+int Min_Atual; // Armazena o minuto atual
+
+int Num_de_Horario  = 1; // Armazena quantos horarios o usuário quer
+int Min_Fut; // Armazena o minuto futuro 
+
+// ---------------------------------------------------------
+
+// -----------------------Funções-----------------------
+
+// Controla os passos do motor  -----------
+void Motor(int Num_porcaoF){
+  N_Passos = ((Num_porcaoF*60)/1.8); // (Num_Pocoes*Angulo)/Num_de_passos_proan
+  N_Passos = round(N_Passos); // Arredondar o valor
+
+  myStepper.step(N_Passos);
+
+ } // End Funçao Motor
+
+void setup() {// put your setup code here, to run once:
+  
+  lcd.begin(16, 2); // Informa o arduino quantos digitos em cada linha(16) e quantas linhas(2)
+  
+/*  for (int i = 0 ; i < EEPROM.length() ; i++) { // Executar apenas uma vez para limpar a memória
+    EEPROM.write(i, 0);
+
+  } // End if(Limpa EEPROM) */
+
+  while (!Serial); 
+
+  Serial.begin(57600); // Inicia a comunicação Serial
+    if (! rtc.begin()) {
+      lcd.print("ERRO - Reinicie"); // Mensagem de erro caso o RTC esteja com algum problema
+      lcd.setCursor(0,1);
+      lcd.print("o dispositivo");
+      while (1);
+    } // End If (Não encontrar RTC)
+
+    if (! rtc.isrunning()) {
+      lcd.print("ERRO - Reinicie"); // Mensagem de erro caso o RTC esteja com algum problema
+      lcd.setCursor(0,1);
+      lcd.print("o dispositivo");
+    
+    }// End If (Não funcionando o RTC)
+
+    rtc.adjust(DateTime(2020, 11, 2, 18, 59, 59)); // Configura a data e a hora(executar apenas uma vez, após isso comentar linha)
+    myStepper.setSpeed(8); // Determina quantos RPM(Rotações por minuto) o motor dará
+   
+    for(int j = 1; j <= Num_de_Horario; j++){ // Neste caso "EEPROM", é um objeto que receberá os valores, de acordo com "j"
+      HORA_S[j] = EEPROM.read(j); // Começa a ler a partir do byte 1 e atribuir a variável
+      MIN_S[j] = EEPROM.read( 10+1*j); // Começa a ler a partir do byte 10 e atribuir a variável
+      Dez_Hora[j] = EEPROM.read(20+1*j ); // Começa a ler a partir do byte 20 e atribuir a variável
+      Uni_Hora[j] = EEPROM.read(30+1*j ); // Começa a ler a partir do byte 30 e atribuir a variável value = EEPROM.read(a);
+      Dez_Min[j] = EEPROM.read(40+1*j ); // Começa a ler a partir do byte 40 e atribuir a variável
+      Uni_Min[j] = EEPROM.read(50+1*j ); // Começa a ler a partir do byte 50 e atribuir a variável
+      Num_de_Horario = EEPROM.read(99 ); // Lê o byte 99
+      Num_porcao = EEPROM.read( 100 ); // Lê o byte 100
+      Serial.println("--Setup----ForEEPROM-------");
+      Serial.println(j);
+      Serial.print("Hora ");
+      Serial.print(HORA_S[j]);
+      Serial.print(" : "); 
+      Serial.println(MIN_S[j]); 
+      Serial.print("Num de H : ");
+      Serial.println(Num_de_Horario);
+      Serial.print("Num de Porcao : ");
+      Serial.println(Num_porcao);
+  } // End for(EEPROM)
+} // End Setup    
+
+void loop() {   
+  
+  lcd.setCursor(0, 0); // Coloca o cursor no primeiro digito na primeira linha
+  lcd.print("Digite qualquer "); // Imprime na tela uma mensagem
+  lcd.setCursor(0, 1); // Coloca o cursor no primeiro digito na segunda linha
+  lcd.print("tecla"); // Imprime na tela uma mensagem
+    
+  DateTime now = rtc.now(); // Declara o objeto "now" da classe DateTime 
+  DateTime future ; // Declara o objeto "future" da classe DateTime 
+  Hr_Atual = now.hour(); // now.hour() informa a hora atual(só as horas, sem minutos)
+  Min_Atual = now.minute(); // now.minute() informa o minuto atual
+   
+/*  if (){
+      digitalWrite(pinValve, HIGH);
+    } // End if agua
+    else {
+      digitalWrite(pinValve, LOW);
+    } // End else agua
+          
+ /* O arduino consegue executar a função loop muitas vezes por minuto, então se não controlar da maneira certa, o motor pode rotacionar dezenas de vezes por minuto
+Como um solução, criei a var Ctrl_Giro que informa se já ocorreu(igual a 1) ou não(igual a 0) a alimentação. */  
+    
+   for(int y = 1; y <= Num_de_Horario; y++){ // For (Verifica)
+
+      if ((Hr_Atual == HORA_S[y] && Min_Atual == MIN_S[y]) ){ // Verifica se chegou a hora da alimentação
+
+        if(Ctrl_Giro == 0){ // Alimenta o animal se Ctrl_Giro é 0, significa que ainda não ocoreu a alimentação
+          Serial.println("SIm");
+          lcd.clear();
+          lcd.print("ALIMENTACAO"); 
+          
+          Motor(Num_porcao); // Função Motor recebe o parâmetro Num_porcao(Números de porções)
+          Ctrl_Giro = 1; // Já ocorreu a alimentação
+          
+          DateTime future (now + TimeSpan(0,0,1,0)); // Soma um minuto ao minuto atual
+          Min_Fut = future.minute(); // Atribuição da soma do minuto
+
+          break; // Este comando força a sair do laço for
+        } /* End If (Motor) */
+      } // END IF (Verifica)
+     } // End For ()
+ /* Para que a próxima alimentação ocorra é necessário que em algum momento Ctrl_Giro retorne a 1.
+    Este momento é quando se passa um minuto da alimentação atual
+    Exemplo: Horario da alimentação 09h00, antes da 09h00 Ctrl_Giro é 0, depois dos passos do motor, Ctrl_Giro recebe 1 e continua assim até chegar em 09h01,
+    nesta hora Ctrl_Giro volta a ser 0, pronto para o próximo horário */  
+  
+  for(int w = 1; w <= Num_de_Horario; w++){ // Verifica se passsou um minuto da ultima alimentação
+
+    if(Ctrl_Giro == 1 && Min_Fut == now.minute()){ // Se já aconteceu a alimentação e se passou um minuto dela, Ctrl_Giro volta a ser 0
+ 
+      Ctrl_Giro = 0;       
+       
+      }// End If Ctrl == 1 e passou um min
+    } // End For ctrl 
+    // O LCD tem 16 digitos em cada linha, mas a numeração vai de 0 até 15
+    // O LCD tem 2 linhas, mas a numeração vai de 0 até 1
+
+
+  teclaPress = teclado.getKey(); // getKey() guarda a tecla digitada
+    
+    if(teclaPress){ // ------------------------------ Se alguma tecla foi apertada...
+
+      lcd.clear();
+      lcd.print("1=Info e "); // 
+      lcd.print("2=Config"); //
+      teclaPress = teclado.waitForKey() - 48; //waitForKey() esta função impede o prosseguimento da função loop, até que alguma tecla seja digitada e guarda qual apertada
+      Serial.println(teclaPress);
+      switch(teclaPress){ // Switch para o usuário escolha uma opção
+//-----------------------------------------------------INFORMAÇÕES-------------------------------------------------------------------------------- 
+      case 1: // Informação: Mostra ao usuário quantas porções, quantos e quais horários estão configurados 
+        lcd.clear();
+        lcd.print("INFO");
+        lcd.setCursor(0, 1);
+        lcd.print("N de pocoes= ");
+        lcd.print(Num_porcao);
+        delay(300);
+        lcd.clear();
+        lcd.print("N de horarios= "); // Imprime na tela
+        lcd.print(Num_de_Horario);
+        delay(300);
+        lcd.clear();
+          for (int x = 1; x <= Num_de_Horario ; x = x + 1) { // Imprime quais horários estão configurados
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.print(x);
+            lcd.print(" horario =");
+            lcd.print(St_HORA_S[x]);
+            lcd.print(":");
+            lcd.print(St_MIN_S[x]);
+            delay(300);
+            } // End For (Info)
+          
+      /* Para poder guardar varios horarios de forma simples, usarei o laço FOR, que repetirá a mesma quantidade de vezes que Num_de_Horario
+  *  As variaveis que armazenam os horarios digitados, são na verdade array, assim necessitam de um numero entre os [] que informa a posição, este numero será "i", 
+variavel de controle do laço FOR, com isso é possivel gravar diversos valores em sequências
+  *  
+  *  usei Numeros de horarios como parâmetro do laço FOR(para repetir ) 
+ */   
+      break;  // End Caso 1 (INFO_H)
+ //-----------------------------------------------------CONFIGURAÇÃO-------------------------------------------------------------------------------- 
+      case 2: // Configuração: O usuário informa quantas porções, quantos e quais horários ele quer que o alimentador registre
+        lcd.clear(); // Limpa todos os digitos 
+        lcd.print("Quantos horarios?");
+        Num_de_Horario = teclado.waitForKey() - 48; // Var tipo int o arduino le como char(com base na tabela ascii), por isso o "-48" 
+                                                    // O usuario informa quantos horarios ele quer
+
+      for (int i = 1; i <= Num_de_Horario ; i = i + 1) { // Determinar quantos vezes ao dia, ira depositar a ração       
+       Erro_num: // Label, caso o usuário aperte uma tecla inválida
+        Serial.println(Num_de_Horario);
+        lcd.clear();
+        lcd.print("Digite o ");
+        lcd.print(i);
+        lcd.setCursor(0, 1);
+        lcd.print(" horario");
+        Dez_Hora[i] = teclado.waitForKey() - 48;// Dezena das horas 
+        lcd.clear();
+        
+          if(Dez_Hora[i] > 2 || Dez_Hora[i] < 0){ // Valores válidos: 0,1,2
+            lcd.clear();
+            lcd.print("Digito invalido");
+            delay(100);
+            lcd.clear();
+            goto Erro_num;
+          } // END if(Dez_Hora[i])
+        
+        lcd.print(Dez_Hora[i]);
+      
+        Uni_Hora[i] = teclado.waitForKey() - 48;// Unidades das horas
+          if( Uni_Hora[i] < 0 || (Dez_Hora[i] == 2 && Uni_Hora[i] > 3 ) ){ // Caso o usuário aperte '#' ou '*'
+            lcd.clear();
+            lcd.print("Digito invalido");
+            delay(100);
+            lcd.clear();
+            goto Erro_num;
+          } // END if(Uni_Hora[i])        
+        
+        lcd.print(Uni_Hora[i]);
+        lcd.print(":");
+        
+       
+        Dez_Min[i] = teclado.waitForKey() - 48;// Dezana dos minutos
+          if(Dez_Min[i] > 5 || Dez_Min[i] < 0){ // Valores válidos: 0 até 5
+            lcd.clear();
+            lcd.print("Digito invalido");
+            delay(100);
+            lcd.clear();
+            goto Erro_num;
+          } // END if(Dez_Min[i]) 
+        
+        lcd.print(Dez_Min[i]);
+        
+        Uni_Min[i] = teclado.waitForKey() - 48;// Unidade dos minutos
+          if( Uni_Min[i] < 0){ // Caso o usuário aperte '#' ou '*'
+            lcd.clear();
+            lcd.print("Digito invalido");
+            delay(100);
+            lcd.clear();
+            goto Erro_num;
+          } // END if(Uni_Min[i])       
+           
+        lcd.print(Uni_Min[i]);
+        delay(150);
+        
+        HORA_S[i] = Dez_Hora[i]*10 + Uni_Hora[i]; // Junta a dezena com a unidade das horas
+        MIN_S[i] = Dez_Min[i]*10 + Uni_Min[i]; // Junta a dezena com a unidade dos minutos
+        
+        St_Dez_Hora[i] = String(Dez_Hora[i]); // Para facilitar a exibição no LCD
+        St_Uni_Hora[i] = String(Uni_Hora[i]);// Para facilitar a exibição no LCD
+        St_Dez_Min[i] = String(Dez_Min[i]); // Para facilitar a exibição no LCD
+        St_Uni_Min[i] = String(Uni_Min[i]); // Para facilitar a exibição no LCD
+
+        St_MIN_S[i] = St_Dez_Min[i] + St_Uni_Min[i]; // Para facilitar a exibição no LCD
+        St_HORA_S[i] = St_Dez_Hora[i] + St_Uni_Hora[i]; // Para facilitar a exibição no LCD
+
+           
+        lcd.clear();
+        lcd.print(i);
+        lcd.print(" Horario dig=");
+        lcd.setCursor(0, 1);
+        lcd.print(St_HORA_S[i]);
+        lcd.print(":");
+        lcd.print(St_MIN_S[i]);
+        delay(150);
+        } // End For
+        
+      lcd.clear();
+      lcd.print("Quantas porcoes?");
+
+      Num_porcao = teclado.waitForKey() - 48;
+      lcd.clear();
+      lcd.print(Num_porcao);
+      lcd.setCursor(0,1);
+      lcd.print("Confirme com '*' "); // Caso o número de porções seja maior que 10
+      Uni_Num_porcao = teclado.waitForKey() - 48; // * em ASCII = 42. 42 - 48 = -6
+       if ( Uni_Num_porcao != -6){ // Se o usuário apertar outro número, ou seja, não apertou '*'
+
+          Num_porcao = (Num_porcao*10 + Uni_Num_porcao); 
+ 
+       } // end If(>= 10)
+      
+      lcd.clear();
+   //   lcd.print("N de porcoes= ");
+      lcd.print(Num_porcao);
+      lcd.setCursor(0,1);
+      lcd.print("Confirme com '*' ");
+       lcd.print("N de porcoes= ");
+      delay(100);
+      teclaPress = teclado.waitForKey();
+      lcd.clear(); 
+      break; //End Caso 2 
+
+      default: // Caso o usuário não aperte nenhum numero indicado
+        lcd.clear();
+        lcd.print("Numero invalido");
+        delay(100);
+      break; // End default
+    
+
+    } // End Switch
+  } // End If (teclaPress) 
+//delay(100);
+  for(int a = 1; a <= Num_de_Horario; a++){
+    
+    EEPROM.update(a, HORA_S[a]); // Escreve a partir do byte 1(a) e na variavel(HORA_S[a]) 
+    EEPROM.update(10+1*a, MIN_S[a]); // Escreve a partir do byte 10(10+1a) e na variavel(MIN_S[a])
+    EEPROM.update(20+1*a, Dez_Hora[a]); // Escreve a partir do byte 20 e na variavel
+    EEPROM.update(30+1*a, Uni_Hora[a]); // Escreve a partir do byte 30 e na variavel
+    EEPROM.update(40+1*a, Dez_Min[a]); // Escreve a partir do byte 40 e na variavel
+    EEPROM.update(50+1*a, Uni_Min[a]); // Escreve a partir do byte 50 e na variavel
+    EEPROM.update(99, Num_de_Horario); // Escreve no byte 99 na variavel
+    EEPROM.update(100,  Num_porcao); // Escreve no byte 100 na variavel
+
+  } // End for(Write EEPROM) 
+ 
+   for(int b = 1; b <= Num_de_Horario; b++){
+      
+      St_Dez_Hora[b] = String(Dez_Hora[b]);
+      St_Uni_Hora[b] = String(Uni_Hora[b]);
+      St_Dez_Min[b] = String(Dez_Min[b]);
+      St_Uni_Min[b] = String(Uni_Min[b]);     
+
+      St_MIN_S[b] = St_Dez_Min[b] + St_Uni_Min[b];
+      St_HORA_S[b] = St_Dez_Hora[b] + St_Uni_Hora[b];
+   
+   } // End For (Int_String)
+ /* for(int b = 1; b <= Num_de_Horario; b++){
+
+    Serial.println("----- Informações gravadas -----");
+    Serial.println(b);
+    Serial.println(St_HORA_S[b]);
+    Serial.println(" : ");
+    Serial.println(St_MIN_S[b]);
+    Serial.println();
+    Serial.println();    
+  } // End For(INOFO) */
+delay(10); // Costumasse dar uma pausa de 10 milissegundos para o arduino "dar uma respirada"
+} // End Loop
