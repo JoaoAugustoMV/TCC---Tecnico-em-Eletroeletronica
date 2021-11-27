@@ -1,3 +1,5 @@
+// Alimentador de PET automático, com seleção de horários e porções.
+
 // -----------------------Bibliotecas----------------------- 
 #include <EEPROM.h> // Biblioteca para usar a memória EEPROM 
 #include <LiquidCrystal.h> // Biblioteca para controlar o display LCD
